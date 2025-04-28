@@ -41,47 +41,47 @@ class LogRevisionsListener implements EventSubscriber
     /**
      * @var \SimpleThings\EntityAudit\AuditConfiguration
      */
-    private $config;
+    protected $config;
 
     /**
      * @var \SimpleThings\EntityAudit\Metadata\MetadataFactory
      */
-    private $metadataFactory;
+    protected $metadataFactory;
 
     /**
      * @var \Doctrine\DBAL\Connection
      */
-    private $conn;
+    protected $conn;
 
     /**
      * @var \Doctrine\DBAL\Platforms\AbstractPlatform
      */
-    private $platform;
+    protected $platform;
 
     /**
      * @var \Doctrine\ORM\EntityManager
      */
-    private $em;
+    protected $em;
 
     /**
      * @var array
      */
-    private $insertRevisionSQL = array();
+    protected $insertRevisionSQL = array();
 
     /**
      * @var \Doctrine\ORM\UnitOfWork
      */
-    private $uow;
+    protected $uow;
 
     /**
      * @var int
      */
-    private $revisionId;
+    protected $revisionId;
 
     /**
      * @var array
      */
-    private $extraUpdates = array();
+    protected $extraUpdates = array();
 
     public function __construct(AuditManager $auditManager)
     {
@@ -94,10 +94,24 @@ class LogRevisionsListener implements EventSubscriber
         return array(Events::onFlush, Events::postPersist, Events::postUpdate, Events::postFlush);
     }
 
+    private function getBt ()
+    {
+			$mesg = '';
+			foreach (debug_backtrace() as $n) {
+				if (isSet($n['file']) && $n['function'] != 'pretty_backtrace')
+					$mesg .= $n['function'] . '() at ' . $n['file'] . ' line '
+					. $n['line'] . "\n";
+			}
+			return $mesg;
+    }
+
     public function postFlush(PostFlushEventArgs $eventArgs)
     {
         $em = $eventArgs->getEntityManager();
         $uow = $em->getUnitOfWork();
+
+#error_log(print_r($this->getBt(),1));
+#error_log('postFlush with num updates: '.count($this->extraUpdates));
 
         foreach ($this->extraUpdates as $entity) {
             $className = get_class($entity);
@@ -111,7 +125,7 @@ class LogRevisionsListener implements EventSubscriber
             }
 
             foreach ($updateData[$meta->table['name']] as $field => $value) {
-                $sql = 'UPDATE ' . $this->config->getTableName($meta) . ' ' .
+                $sql = '/* postFlush */ UPDATE ' . $this->config->getTableName($meta) . ' ' .
                     'SET ' . $field . ' = ? ' .
                     'WHERE ' . $this->config->getRevisionFieldName() . ' = ? ';
 
@@ -158,6 +172,13 @@ class LogRevisionsListener implements EventSubscriber
 
                     $sql .= 'AND ' . $columnName . ' = ?';
                 }
+/*
+$deb = [];
+foreach ($params as $p) {
+$deb[] = is_object($p) ? 'object' : $p;
+}
+error_log($sql.' vars: '.implode(', ', $deb));
+*/
 
                 $this->em->getConnection()->executeQuery($sql, $params, $types);
             }
@@ -238,7 +259,8 @@ class LogRevisionsListener implements EventSubscriber
                 continue;
             }
 
-            $this->extraUpdates[spl_object_hash($entity)] = $entity;
+#error_log("add extraUpdate Insert: ".get_class($entity));
+            #$this->extraUpdates[spl_object_hash($entity)] = $entity;
         }
 
         foreach ($this->uow->getScheduledEntityUpdates() as $entity) {
@@ -246,6 +268,7 @@ class LogRevisionsListener implements EventSubscriber
                 continue;
             }
 
+#error_log("add extraUpdate Update: ".get_class($entity));
             $this->extraUpdates[spl_object_hash($entity)] = $entity;
         }
     }
@@ -257,7 +280,7 @@ class LogRevisionsListener implements EventSubscriber
      *
      * @return array
      */
-    private function getOriginalEntityData($entity)
+    protected function getOriginalEntityData($entity)
     {
         $class = $this->em->getClassMetadata(get_class($entity));
         $data = $this->uow->getOriginalEntityData($entity);
@@ -269,7 +292,7 @@ class LogRevisionsListener implements EventSubscriber
         return $data;
     }
 
-    private function getRevisionId()
+    protected function getRevisionId()
     {
         if ($this->revisionId === null) {
             $this->conn->insert(
@@ -300,7 +323,7 @@ class LogRevisionsListener implements EventSubscriber
      * @return string
      * @throws \Doctrine\DBAL\DBALException
      */
-    private function getInsertRevisionSQL($class)
+    protected function getInsertRevisionSQL($class)
     {
         if (! isset($this->insertRevisionSQL[$class->name])) {
             $placeholders = array('?', '?');
@@ -363,7 +386,7 @@ class LogRevisionsListener implements EventSubscriber
      * @param array         $entityData
      * @param string        $revType
      */
-    private function saveRevisionEntityData($class, $entityData, $revType)
+    protected function saveRevisionEntityData($class, $entityData, $revType)
     {
         $params = array($this->getRevisionId(), $revType);
         $types = array(\PDO::PARAM_INT, \PDO::PARAM_STR);
@@ -442,7 +465,7 @@ class LogRevisionsListener implements EventSubscriber
      *
      * @return string
      */
-    private function getHash($entity)
+    protected function getHash($entity)
     {
         return implode(
             ' ',
@@ -472,7 +495,7 @@ class LogRevisionsListener implements EventSubscriber
      *
      * @return array
      */
-    private function prepareUpdateData($persister, $entity)
+    protected function prepareUpdateData($persister, $entity)
     {
         $uow = $this->em->getUnitOfWork();
         $classMetadata = $persister->getClassMetadata();
